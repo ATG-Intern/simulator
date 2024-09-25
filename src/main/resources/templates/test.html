@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BEMS 3D Building Model (Realistic Equipment and Elevator)</title>
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+      }
+      canvas {
+        display: block;
+      }
+      #legend {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        background: rgba(255, 255, 255, 0.7);
+        padding: 10px;
+        border-radius: 5px;
+      }
+      .legend-item {
+        margin: 5px 0;
+      }
+      .color-box {
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        margin-right: 5px;
+        vertical-align: middle;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="legend"></div>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.138.0/build/three.module.js",
+          "three/examples/jsm/controls/OrbitControls": "https://unpkg.com/three@0.138.0/examples/jsm/controls/OrbitControls.js"
+        }
+      }
+    </script>
+    <script type="module">
+      import * as THREE from "three";
+      import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
+
+      let scene, camera, renderer, building, controls;
+      const floorHeight = 4;
+      const floorWidth = 20;
+      const floorDepth = 15;
+
+      const equipmentColors = {
+        HVAC: 0x00ff00,
+        Lighting: 0xffff00,
+        TemperatureSensor: 0xff0000,
+        HumiditySensor: 0x0000ff,
+        LightSensor: 0xffa500,
+        PowerMeter: 0x800080,
+        OccupancySensor: 0x00ffff,
+        Elevator: 0x808080,
+      };
+
+      function init() {
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xcccccc);
+
+        camera = new THREE.PerspectiveCamera(
+          75,
+          window.innerWidth / window.innerHeight,
+          0.1,
+          1000
+        );
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        document.body.appendChild(renderer.domElement);
+
+        const ambientLight = new THREE.AmbientLight(0x404040);
+        scene.add(ambientLight);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+        directionalLight.position.set(1, 1, 1);
+        scene.add(directionalLight);
+
+        building = new THREE.Group();
+        scene.add(building);
+
+        for (let i = 0; i < 5; i++) {
+          const floor = createFloor(i);
+          building.add(floor);
+        }
+
+        // Add elevator shaft
+        const elevatorShaft = createElevatorShaft();
+        building.add(elevatorShaft);
+
+        camera.position.set(40, 30, 40);
+        camera.lookAt(building.position);
+
+        controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+
+        window.addEventListener("resize", onWindowResize, false);
+
+        createLegend();
+        animate();
+      }
+
+      function createFloor(floorNumber) {
+        const floor = new THREE.Group();
+
+        const floorGeometry = new THREE.BoxGeometry(
+          floorWidth,
+          0.5,
+          floorDepth
+        );
+        const floorMaterial = new THREE.MeshPhongMaterial({ color: 0xcccccc });
+        const floorMesh = new THREE.Mesh(floorGeometry, floorMaterial);
+        floor.add(floorMesh);
+
+        const wallMaterial = new THREE.MeshPhongMaterial({
+          color: 0xeeeeee,
+          transparent: true,
+          opacity: 0.3,
+          side: THREE.DoubleSide,
+        });
+
+        const wallGeometry = new THREE.BoxGeometry(
+          floorWidth,
+          floorHeight,
+          0.1
+        );
+        const frontWall = new THREE.Mesh(wallGeometry, wallMaterial);
+        frontWall.position.set(0, floorHeight / 2, floorDepth / 2);
+        floor.add(frontWall);
+
+        const backWall = frontWall.clone();
+        backWall.position.z = -floorDepth / 2;
+        floor.add(backWall);
+
+        const sideWallGeometry = new THREE.BoxGeometry(
+          0.1,
+          floorHeight,
+          floorDepth
+        );
+        const leftWall = new THREE.Mesh(sideWallGeometry, wallMaterial);
+        leftWall.position.set(-floorWidth / 2, floorHeight / 2, 0);
+        floor.add(leftWall);
+
+        const rightWall = leftWall.clone();
+        rightWall.position.x = floorWidth / 2;
+        floor.add(rightWall);
+
+        // Add equipment and sensors
+        floor.add(createHVAC(-8, 1, 5));
+        floor.add(createLighting(8, 3, -5));
+        floor.add(createTemperatureSensor(-5, 2, 6));
+        floor.add(createHumiditySensor(5, 2, 6));
+        floor.add(createLightSensor(0, 3, 0));
+        floor.add(createPowerMeter(9, 1, 6));
+        floor.add(createOccupancySensor(-9, 3, -6));
+
+        floor.position.y = floorNumber * floorHeight;
+
+        return floor;
+      }
+
+      function createHVAC(x, y, z) {
+        const hvac = new THREE.Group();
+        const body = new THREE.Mesh(
+          new THREE.BoxGeometry(2, 1, 1.5),
+          new THREE.MeshPhongMaterial({ color: equipmentColors.HVAC })
+        );
+        const fan = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.4, 0.4, 0.2, 32),
+          new THREE.MeshPhongMaterial({ color: 0xaaaaaa })
+        );
+        fan.rotation.x = Math.PI / 2;
+        fan.position.z = 0.85;
+        hvac.add(body, fan);
+        hvac.position.set(x, y, z);
+        return hvac;
+      }
+
+      function createLighting(x, y, z) {
+        const lighting = new THREE.Group();
+        const fixture = new THREE.Mesh(
+          new THREE.BoxGeometry(1, 0.2, 0.2),
+          new THREE.MeshPhongMaterial({ color: 0xaaaaaa })
+        );
+        const bulb = new THREE.Mesh(
+          new THREE.SphereGeometry(0.1, 32, 32),
+          new THREE.MeshPhongMaterial({
+            color: equipmentColors.Lighting,
+            emissive: equipmentColors.Lighting,
+          })
+        );
+        bulb.position.y = -0.15;
+        lighting.add(fixture, bulb);
+        lighting.position.set(x, y, z);
+        return lighting;
+      }
+
+      function createTemperatureSensor(x, y, z) {
+        const sensor = new THREE.Group();
+        const body = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.1, 0.1, 0.3, 32),
+          new THREE.MeshPhongMaterial({
+            color: equipmentColors.TemperatureSensor,
+          })
+        );
+        const tip = new THREE.Mesh(
+          new THREE.ConeGeometry(0.1, 0.2, 32),
+          new THREE.MeshPhongMaterial({ color: 0xcccccc })
+        );
+        tip.position.y = 0.25;
+        sensor.add(body, tip);
+        sensor.position.set(x, y, z);
+        return sensor;
+      }
+
+      function createHumiditySensor(x, y, z) {
+        const sensor = new THREE.Mesh(
+          new THREE.BoxGeometry(0.3, 0.5, 0.2),
+          new THREE.MeshPhongMaterial({ color: equipmentColors.HumiditySensor })
+        );
+        sensor.position.set(x, y, z);
+        return sensor;
+      }
+
+      function createLightSensor(x, y, z) {
+        const sensor = new THREE.Group();
+        const body = new THREE.Mesh(
+          new THREE.BoxGeometry(0.4, 0.4, 0.2),
+          new THREE.MeshPhongMaterial({ color: equipmentColors.LightSensor })
+        );
+        const lens = new THREE.Mesh(
+          new THREE.SphereGeometry(0.1, 32, 32),
+          new THREE.MeshPhongMaterial({
+            color: 0xffffff,
+            transparent: true,
+            opacity: 0.5,
+          })
+        );
+        lens.position.z = 0.15;
+        sensor.add(body, lens);
+        sensor.position.set(x, y, z);
+        return sensor;
+      }
+
+      function createPowerMeter(x, y, z) {
+        const meter = new THREE.Group();
+        const body = new THREE.Mesh(
+          new THREE.BoxGeometry(0.6, 0.8, 0.3),
+          new THREE.MeshPhongMaterial({ color: equipmentColors.PowerMeter })
+        );
+        const display = new THREE.Mesh(
+          new THREE.PlaneGeometry(0.4, 0.2),
+          new THREE.MeshPhongMaterial({ color: 0x000000 })
+        );
+        display.position.z = 0.151;
+        meter.add(body, display);
+        meter.position.set(x, y, z);
+        return meter;
+      }
+
+      function createOccupancySensor(x, y, z) {
+        const sensor = new THREE.Group();
+        const body = new THREE.Mesh(
+          new THREE.BoxGeometry(0.3, 0.3, 0.1),
+          new THREE.MeshPhongMaterial({
+            color: equipmentColors.OccupancySensor,
+          })
+        );
+        const lens = new THREE.Mesh(
+          new THREE.SphereGeometry(0.1, 32, 32),
+          new THREE.MeshPhongMaterial({
+            color: 0x000000,
+            transparent: true,
+            opacity: 0.5,
+          })
+        );
+        lens.position.z = 0.05;
+        sensor.add(body, lens);
+        sensor.position.set(x, y, z);
+        return sensor;
+      }
+
+      function createElevatorShaft() {
+        const shaft = new THREE.Group();
+        const shaftGeometry = new THREE.BoxGeometry(3, floorHeight * 5, 3);
+        const shaftMaterial = new THREE.MeshPhongMaterial({
+          color: 0x888888,
+          transparent: true,
+          opacity: 0.5,
+        });
+        const shaftMesh = new THREE.Mesh(shaftGeometry, shaftMaterial);
+        shaftMesh.position.set(floorWidth / 2 - 2, floorHeight * 2.5, 0);
+        shaft.add(shaftMesh);
+
+        // Add elevator
+        const elevatorGeometry = new THREE.BoxGeometry(2.5, 3, 2.5);
+        const elevatorMaterial = new THREE.MeshPhongMaterial({
+          color: equipmentColors.Elevator,
+        });
+        const elevator = new THREE.Mesh(elevatorGeometry, elevatorMaterial);
+        elevator.position.set(floorWidth / 2 - 2, 1.5, 0);
+        shaft.add(elevator);
+
+        return shaft;
+      }
+
+      function createLegend() {
+        const legend = document.getElementById("legend");
+        for (const [key, value] of Object.entries(equipmentColors)) {
+          const item = document.createElement("div");
+          item.className = "legend-item";
+          const colorBox = document.createElement("span");
+          colorBox.className = "color-box";
+          colorBox.style.backgroundColor = `#${value
+            .toString(16)
+            .padStart(6, "0")}`;
+          item.appendChild(colorBox);
+          item.appendChild(document.createTextNode(key));
+          legend.appendChild(item);
+        }
+      }
+
+      function animate() {
+        requestAnimationFrame(animate);
+        controls.update();
+        renderer.render(scene, camera);
+      }
+
+      function onWindowResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      }
+
+      init();
+    </script>
+  </body>
+</html>
